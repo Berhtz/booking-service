@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: bookingService
+  datasource:
+    url: jdbc:postgresql://localhost:5432/booking
+    driver-class-name: org.postgresql.Driver
+    username: postgres
+    password: bert005
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+booking:
+  weekends: ["SATURDAY", "SUNDAY"]
+  # учитывается только время на которое можно записаться (рабочий день до 18:00, поэтому 18:00-19:00 записи нет)
+  working-time-regular: ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"]
+  working-time-holiday: ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00"]
+  max-slots: 3
+  max-bookings-for-client: 2
+  holidays:
+    - "2025-01-01"
+    - "2025-02-23"
+    - "2025-03-08"
+  

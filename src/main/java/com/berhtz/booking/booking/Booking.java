@@ -1,18 +1,20 @@
 package com.berhtz.booking.booking;
 
 import com.berhtz.booking.client.Client;
-import com.berhtz.booking.holiday.Holiday;
-import com.berhtz.booking.schedule.Schedule;
 
-import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.LocalDate;
+import java.util.Set;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 @Data
@@ -23,18 +25,16 @@ public class Booking {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private LocalDateTime bookingTime;
+    @NotNull
+    private LocalDate date;
 
-    @ManyToOne
-    @JoinColumn(name = "client_id")
-    private Client client;
+    private LocalTime time;
 
-    @ManyToOne
-    @JoinColumn(name = "schedule_id")
-    private Schedule schedule;
+    @ManyToMany
+    @JoinTable(name = "booking_clients", joinColumns = @JoinColumn(name = "booking_id"), inverseJoinColumns = @JoinColumn(name = "client_id"))
+    private Set<Client> clients;
 
-    @ManyToOne
-    @JoinColumn(name = "holiday_id", nullable = true)
-    private Holiday holiday;
+    public boolean hasClient(Client client) {
+        return clients != null && clients.contains(client);
+    }
 }
-

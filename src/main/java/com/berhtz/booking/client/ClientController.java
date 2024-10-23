@@ -13,33 +13,38 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.validation.Valid;
+
 @RestController
-@RequestMapping(path="/api/v0/pool/client/")
+@RequestMapping(path = "/api/v0/pool/client/")
 public class ClientController {
 
     @Autowired
     private ClientService clientService;
-    
+
     @GetMapping("/all")
     List<Client> getClients() {
         return clientService.getAllClients();
-        }
+    }
 
     @GetMapping("/get/{id}")
     Client getClient(@PathVariable Long id) {
         return clientService.getClientById(id);
     }
-    
+
     @PostMapping("/add")
-    ResponseEntity<Client> addClient(@RequestBody Client client) {
+    public ResponseEntity<Client> addClient(@Valid @RequestBody Client client) {
+
         Client savedClient = clientService.saveClient(client);
+
         return ResponseEntity.status(HttpStatus.CREATED).body(savedClient);
     }
 
-    /** 
+    /**
      * Обновление данных о клиенте
-     * @return ?
-     * */ 
+     * 
+     * @return 
+     */
     @PutMapping("/update")
     Client updateClient(@RequestBody Client client) {
 
