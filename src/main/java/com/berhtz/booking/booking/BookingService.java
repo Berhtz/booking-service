@@ -63,43 +63,24 @@ public class BookingService {
     public Long addBooking(Long clientId, LocalDateTime dateTime) {
 
         Client client = clientRepository.findById(clientId)
-        .orElseThrow(() -> new IllegalArgumentException("Client not found"));
-              
+                .orElseThrow(() -> new IllegalArgumentException("Client not found"));
+
         LocalTime time = dateTime.toLocalTime();
         LocalDate date = dateTime.toLocalDate();
-        Optional<Booking> existingBooking = bookingRepository.findByDateAndTime(date, time);  
+
+        Optional<Booking> existingBooking = bookingRepository.findByDateAndTime(date, time);
 
         validateBooking(clientId, dateTime);
-        
-        if (!existingBooking.isPresent()) {
-            Booking newBooking = new Booking();
-            Set<Client> clientSet = new HashSet<>();
-            newBooking.setDate(date);
-            newBooking.setTime(time);
-            clientSet.add(client);
-            newBooking.setClients(clientSet);
-            return bookingRepository.save(newBooking).getId();
-        } else {
-            Booking booking = existingBooking.get();
-            int reservedSlots = countClientsCountByDateAndTime(date, time);
 
-            if (reservedSlots < config.getMaxSlots()) {
-                // Проверяем, записан ли уже клиент на это время
-                if (!booking.getClients().contains(client)) {
-                    booking.getClients().add(client);
-                    return bookingRepository.save(booking).getId();
-                } else {
-                    throw new IllegalStateException("Client already booked for this time.");
-                }
-            } else {
-                // Если слоты заняты, выбрасываем исключение
-                throw new IllegalStateException("No available slots for this time.");
-            }
+        if (!existingBooking.isPresent()) {
+            return createNewBooking(client, date, time);
         }
+        return addClientToExistingBooking(existingBooking.get(), client, dateTime);
+
     }
 
     public ResponseEntity<Void> cancel(Long clientId, Long bookingId) {
-        // проверка существуют ли клиент и запись в БД
+        // проверка существует ли запись в БД
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
 
@@ -119,7 +100,7 @@ public class BookingService {
         }
     }
 
-    public int countClientsCountByDateAndTime(LocalDate date, LocalTime time) {
+    private int countClientsCountByDateAndTime(LocalDate date, LocalTime time) {
         String sql = "SELECT COUNT(DISTINCT bc.client_id) AS client_count " +
                 "FROM bookings b " +
                 "JOIN booking_clients bc ON b.id = bc.booking_id " +
@@ -128,7 +109,7 @@ public class BookingService {
         return jdbcTemplate.queryForObject(sql, Integer.class, date, time);
     }
 
-    public Integer countClientInBooking(Long bookingId, Long clientId) {
+    private Integer countClientInBooking(Long bookingId, Long clientId) {
         String sql = "SELECT COUNT(*) " +
                 "FROM booking_clients " +
                 "WHERE booking_id = ? " +
@@ -138,7 +119,7 @@ public class BookingService {
         return count;
     }
 
-    public Integer deleteClient(Long bookingId, Long clientId) {
+    private Integer deleteClient(Long bookingId, Long clientId) {
         String sql = "DELETE FROM booking_clients " +
                 "WHERE booking_id = ? AND client_id = ?;";
 
@@ -147,7 +128,7 @@ public class BookingService {
         return count;
     }
 
-    public Integer countClientBookingsOnDate(Long clientId, LocalDate date) {
+    private Integer countClientBookingsOnDate(Long clientId, LocalDate date) {
         String sql = "SELECT COUNT(*) " +
                 "FROM bookings b " +
                 "JOIN booking_clients c ON b.id = c.booking_id " +
@@ -181,7 +162,7 @@ public class BookingService {
     private void validateWorkingHours(LocalDateTime dateTime) {
         // выясняем праздничный день (сокращенный график) или обычный
         List<String> workingTime = isHoliday(dateTime.toLocalDate()) ? config.getWorkingTimeHoliday()
-            : config.getWorkingTimeRegular();
+                : config.getWorkingTimeRegular();
 
         String timeCheck = dateTime.toLocalTime().toString();
         if (!workingTime.contains(timeCheck)) {
@@ -193,4 +174,32 @@ public class BookingService {
         return config.getHolidays().contains(date);
     }
 
+    private Long createNewBooking(Client client, LocalDate date, LocalTime time) {
+        Booking newBooking = new Booking();
+        Set<Client> clientSet = new HashSet<>();
+        newBooking.setDate(date);
+        newBooking.setTime(time);
+        clientSet.add(client);
+        newBooking.setClients(clientSet);
+        return bookingRepository.save(newBooking).getId();
+    }
+
+    private Long addClientToExistingBooking(Booking existingBooking, Client client, LocalDateTime dateTime) {
+        Booking booking = existingBooking;
+        int reservedSlots = countClientsCountByDateAndTime(dateTime.toLocalDate(), dateTime.toLocalTime());
+
+        if (reservedSlots < config.getMaxSlots()) {
+            // Проверяем, записан ли уже клиент на это время
+            if (!booking.getClients().contains(client)) {
+                booking.getClients().add(client);
+                return bookingRepository.save(booking).getId();
+            } else {
+                throw new IllegalStateException("Client already booked for this time.");
+            }
+        } else {
+            // Если слоты заняты, выбрасываем исключение
+            throw new IllegalStateException("No available slots for this time.");
+        }
+    }
+    
 }
