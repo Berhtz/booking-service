@@ -44,7 +44,6 @@ public class BookingController {
         // Добавить запись клиента на определенное время
         Long clientId = booking.getClientId();
         LocalDateTime dateTime = booking.getDateTime();
-        System.out.println(clientId + " " + dateTime);
 
         return bookingService.addBooking(clientId, dateTime);
     }

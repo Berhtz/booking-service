@@ -63,40 +63,27 @@ public class BookingService {
     public Long addBooking(Long clientId, LocalDateTime dateTime) {
 
         Client client = clientRepository.findById(clientId)
-                .orElseThrow(() -> new IllegalArgumentException("Client not found"));
+        .orElseThrow(() -> new IllegalArgumentException("Client not found"));
+              
         LocalTime time = dateTime.toLocalTime();
         LocalDate date = dateTime.toLocalDate();
+        Optional<Booking> existingBooking = bookingRepository.findByDateAndTime(date, time);  
 
-        Optional<Booking> existingBooking = bookingRepository.findByDateAndTime(date, time);
-
-        if (countClientBookingsOnDate(clientId, date) >= config.getMaxBookingsForClient()) {
-            throw new IllegalArgumentException("exceeded number of bookings in a day");
-        }
-
-        // проверка на выходной день (не рабочий день, запись не доступна)
-        String dayOfWeek = dateTime.getDayOfWeek().toString();
-        if (config.getWeekends().contains(dayOfWeek)) {
-            throw new IllegalArgumentException("Cant reserve in weekends");
-        }
-
-        // выясняем праздничный день (сокращенный график) или обычный
-        List<String> workingTime = isHoliday(dateTime.toLocalDate()) ? config.getWorkingTimeHoliday()
-                : config.getWorkingTimeRegular();
-
-        // проверка на запись в пределах графика
-        String timeCheck = dateTime.toLocalTime().toString();
-        if (!workingTime.contains(timeCheck)) {
-            throw new IllegalArgumentException("Cant reserve out of working hours");
-        }
-
-        // Проверяем, есть ли бронирование на указанное время
-        if (existingBooking.isPresent()) {
+        validateBooking(clientId, dateTime);
+        
+        if (!existingBooking.isPresent()) {
+            Booking newBooking = new Booking();
+            Set<Client> clientSet = new HashSet<>();
+            newBooking.setDate(date);
+            newBooking.setTime(time);
+            clientSet.add(client);
+            newBooking.setClients(clientSet);
+            return bookingRepository.save(newBooking).getId();
+        } else {
             Booking booking = existingBooking.get();
             int reservedSlots = countClientsCountByDateAndTime(date, time);
 
-            // Если количество слотов меньше максимума, добавляем клиента
             if (reservedSlots < config.getMaxSlots()) {
-
                 // Проверяем, записан ли уже клиент на это время
                 if (!booking.getClients().contains(client)) {
                     booking.getClients().add(client);
@@ -108,16 +95,6 @@ public class BookingService {
                 // Если слоты заняты, выбрасываем исключение
                 throw new IllegalStateException("No available slots for this time.");
             }
-        } else {
-            // Если бронирования нет, создаем новое
-            System.out.println("здеся");
-            Booking newBooking = new Booking();
-            Set<Client> clientSet = new HashSet<>();
-            newBooking.setDate(date);
-            newBooking.setTime(time);
-            clientSet.add(client);
-            newBooking.setClients(clientSet);
-            return bookingRepository.save(newBooking).getId();
         }
     }
 
@@ -179,6 +156,37 @@ public class BookingService {
 
         Integer count = jdbcTemplate.queryForObject(sql, Integer.class, clientId, date);
         return count;
+    }
+
+    private void validateBooking(Long clientId, LocalDateTime dateTime) {
+        validateClientBookingLimit(clientId, dateTime.toLocalDate());
+        validateWeekend(dateTime);
+        validateWorkingHours(dateTime);
+    }
+
+    private void validateClientBookingLimit(Long clientId, LocalDate date) {
+        if (countClientBookingsOnDate(clientId, date) >= config.getMaxBookingsForClient()) {
+            throw new IllegalArgumentException("Exceeded number of bookings in a day");
+        }
+    }
+
+    private void validateWeekend(LocalDateTime dateTime) {
+        // проверка на выходной день (не рабочий день, запись не доступна)
+        String dayOfWeek = dateTime.getDayOfWeek().toString();
+        if (config.getWeekends().contains(dayOfWeek)) {
+            throw new IllegalArgumentException("Cant reserve in weekends");
+        }
+    }
+
+    private void validateWorkingHours(LocalDateTime dateTime) {
+        // выясняем праздничный день (сокращенный график) или обычный
+        List<String> workingTime = isHoliday(dateTime.toLocalDate()) ? config.getWorkingTimeHoliday()
+            : config.getWorkingTimeRegular();
+
+        String timeCheck = dateTime.toLocalTime().toString();
+        if (!workingTime.contains(timeCheck)) {
+            throw new IllegalArgumentException("Cant reserve out of working hours");
+        }
     }
 
     private Boolean isHoliday(LocalDate date) {
