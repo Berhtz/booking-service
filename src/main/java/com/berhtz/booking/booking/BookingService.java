@@ -12,7 +12,6 @@ import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import com.berhtz.booking.client.Client;
@@ -29,10 +28,13 @@ public class BookingService {
     ClientRepository clientRepository;
 
     @Autowired
+    BookingCustomRepository bookingCustomRepository;
+
+    @Autowired
     private Config config;
 
     @Autowired
-    JdbcTemplate jdbcTemplate;
+    private BookingValidator bookingValidator;
 
     public List<Booking> getAllBookings(LocalDate date) {
         return bookingRepository.findByDate(date);
@@ -53,7 +55,7 @@ public class BookingService {
         // Для каждого времени в списке считаем количество доступных слотов
         for (String hour : hours) {
             LocalTime time = LocalTime.parse(hour); // Парсим время из строки
-            int availableSlots = config.getMaxSlots() - countClientsCountByDateAndTime(date, time);
+            int availableSlots = config.getMaxSlots() - bookingCustomRepository.countClientsCountByDateAndTime(date, time);
             availableHours.put(time, availableSlots); // Добавляем время и доступные слоты в Map
         }
 
@@ -70,7 +72,7 @@ public class BookingService {
 
         Optional<Booking> existingBooking = bookingRepository.findByDateAndTime(date, time);
 
-        validateBooking(clientId, dateTime);
+        bookingValidator.validateBooking(clientId, dateTime);
 
         if (!existingBooking.isPresent()) {
             return createNewBooking(client, date, time);
@@ -85,9 +87,9 @@ public class BookingService {
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
 
         // проверка есть ли клиент в этой записи
-        int clientsInBooking = countClientInBooking(bookingId, clientId);
+        int clientsInBooking = bookingCustomRepository.countClientInBooking(bookingId, clientId);
         if (clientsInBooking > 0) {
-            deleteClient(bookingId, clientId);
+            bookingCustomRepository.deleteClient(bookingId, clientId);
 
             // если после удаления клиента у записи нет других клиентов, удаляем запись
             if ((clientsInBooking - 1) == 0) {
@@ -97,76 +99,6 @@ public class BookingService {
 
         } else {
             throw new IllegalStateException("Client doesnt have this booking");
-        }
-    }
-
-    private int countClientsCountByDateAndTime(LocalDate date, LocalTime time) {
-        String sql = "SELECT COUNT(DISTINCT bc.client_id) AS client_count " +
-                "FROM bookings b " +
-                "JOIN booking_clients bc ON b.id = bc.booking_id " +
-                "WHERE b.date = ? AND b.time = ?";
-
-        return jdbcTemplate.queryForObject(sql, Integer.class, date, time);
-    }
-
-    private Integer countClientInBooking(Long bookingId, Long clientId) {
-        String sql = "SELECT COUNT(*) " +
-                "FROM booking_clients " +
-                "WHERE booking_id = ? " +
-                "AND client_id = ?;";
-
-        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, bookingId, clientId);
-        return count;
-    }
-
-    private Integer deleteClient(Long bookingId, Long clientId) {
-        String sql = "DELETE FROM booking_clients " +
-                "WHERE booking_id = ? AND client_id = ?;";
-
-        int count = jdbcTemplate.update(sql, bookingId, clientId);
-        // count > 0 значи запись удалена
-        return count;
-    }
-
-    private Integer countClientBookingsOnDate(Long clientId, LocalDate date) {
-        String sql = "SELECT COUNT(*) " +
-                "FROM bookings b " +
-                "JOIN booking_clients c ON b.id = c.booking_id " +
-                "WHERE c.client_id = ? " +
-                "AND b.date = ?;";
-
-        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, clientId, date);
-        return count;
-    }
-
-    private void validateBooking(Long clientId, LocalDateTime dateTime) {
-        validateClientBookingLimit(clientId, dateTime.toLocalDate());
-        validateWeekend(dateTime);
-        validateWorkingHours(dateTime);
-    }
-
-    private void validateClientBookingLimit(Long clientId, LocalDate date) {
-        if (countClientBookingsOnDate(clientId, date) >= config.getMaxBookingsForClient()) {
-            throw new IllegalArgumentException("Exceeded number of bookings in a day");
-        }
-    }
-
-    private void validateWeekend(LocalDateTime dateTime) {
-        // проверка на выходной день (не рабочий день, запись не доступна)
-        String dayOfWeek = dateTime.getDayOfWeek().toString();
-        if (config.getWeekends().contains(dayOfWeek)) {
-            throw new IllegalArgumentException("Cant reserve in weekends");
-        }
-    }
-
-    private void validateWorkingHours(LocalDateTime dateTime) {
-        // выясняем праздничный день (сокращенный график) или обычный
-        List<String> workingTime = isHoliday(dateTime.toLocalDate()) ? config.getWorkingTimeHoliday()
-                : config.getWorkingTimeRegular();
-
-        String timeCheck = dateTime.toLocalTime().toString();
-        if (!workingTime.contains(timeCheck)) {
-            throw new IllegalArgumentException("Cant reserve out of working hours");
         }
     }
 
@@ -186,7 +118,7 @@ public class BookingService {
 
     private Long addClientToExistingBooking(Booking existingBooking, Client client, LocalDateTime dateTime) {
         Booking booking = existingBooking;
-        int reservedSlots = countClientsCountByDateAndTime(dateTime.toLocalDate(), dateTime.toLocalTime());
+        int reservedSlots = bookingCustomRepository.countClientsCountByDateAndTime(dateTime.toLocalDate(), dateTime.toLocalTime());
 
         if (reservedSlots < config.getMaxSlots()) {
             // Проверяем, записан ли уже клиент на это время
